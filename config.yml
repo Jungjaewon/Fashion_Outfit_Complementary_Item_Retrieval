@@ -1,0 +1,62 @@
+
+MODEL_CONFIG:
+  IMG_SIZE: 256
+
+TRAINING_CONFIG:
+
+  EPOCH: 100
+  BATCH_SIZE: 4
+  BACKBONE: 'resnet50'
+
+  # lr and lambda
+  BASE_LR : 10e-5
+  EMBED_LR : 10e-5
+  MASK_LR : 20e-5
+  LAMBDA_BACK : 1
+  LAMBDA_SUB: 30
+  MARGIN : 0.2
+
+  #Other Setting
+  PRE_MASK : 'True'
+  MASK_LEARN : 'True'
+  NUM_CATE : 10
+  NUM_CONDITION : 10
+  EMD_DIM : 64
+  NUM_CONCEPT : 4
+  IMAGE_NET: 'True'
+
+  # Optimizer
+  OPTIM : ADAM
+  BETA1: 0.9
+  BETA2: 0.999
+
+  # Settings
+  NUM_WORKER : 4
+  MODE : 'train'
+  CPU_SEED : 123
+  GPU_SEED : 456
+  USE_TENSORBOARD : 'False' # 'True' or 'False'
+
+  # Directory
+  DATA_DIR : 'data/'
+  TRAIN_DIR : 'CSA_tutorial'
+  LOG_DIR : 'logs'
+  SAMPLE_DIR : 'samples'
+  RESULT_DIR : 'results'
+  MODEL_DIR : 'models'
+
+  # GPU
+  GPU: 3
+
+  # Step Size
+
+  SAMPLE_STEP : 1 # epoch based
+  LOG_STEP : 1 # iteration based
+  SAVE_STEP : 5 # epoch based
+  SAVE_START : 10
+  LR_DECAY_STEP : 20
+
+TEST_CONFIG:
+  TEST_EPOCH : 100
+
+
