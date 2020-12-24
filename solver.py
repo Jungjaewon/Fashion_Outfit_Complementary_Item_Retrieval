@@ -4,6 +4,7 @@ import datetime
 import torch
 import glob
 import os.path as osp
+import torch.nn as nn
 
 from model import ConditionalSimNet
 
@@ -26,10 +27,14 @@ class Solver(object):
         self.margin        = float(config['TRAINING_CONFIG']['MARGIN'])
         self.lambda_back   = float(config['TRAINING_CONFIG']['LAMBDA_BACK'])
         self.lambda_sub    = float(config['TRAINING_CONFIG']['LAMBDA_SUB'])
+        self.num_outfit = config['TRAINING_CONFIG']['NUM_OUTFIT']
+        self.num_negative = config['TRAINING_CONFIG']['NUM_NEGATIVE']
 
         self.optim = config['TRAINING_CONFIG']['OPTIM']
         self.beta1 = config['TRAINING_CONFIG']['BETA1']
         self.beta2 = config['TRAINING_CONFIG']['BETA2']
+        self.ranking_loss = nn.MarginRankingLoss(margin=self.margin)
+        # torch.dist(x, y, p=2)
 
         self.cpu_seed = config['TRAINING_CONFIG']['CPU_SEED']
         self.gpu_seed = config['TRAINING_CONFIG']['GPU_SEED']
@@ -60,7 +65,7 @@ class Solver(object):
 
     def build_model(self):
         self.CSA = ConditionalSimNet(self.config).to(self.gpu)
-        self.optimizer = torch.optim.Adam(self.CSA.parameters(), self.base_lr_lr, (self.beta1, self.beta2))
+        self.optimizer = torch.optim.Adam(self.CSA.parameters(), self.base_lr, (self.beta1, self.beta2))
         self.print_network(self.CSA, 'CSA')
 
     def print_network(self, model, name):
@@ -108,9 +113,9 @@ class Solver(object):
 
         return epoch
 
-    def list2gpu(self, image_list):
-        for image in image_list:
-            image.to(self.gpu)
+    def dict2gpu(self, data_dict):
+        for key in data_dict:
+            data_dict[key].to(self.gpu)
 
     def train(self):
 
@@ -133,11 +138,34 @@ class Solver(object):
                     data_iter = iter(data_loader)
                     data_dict = next(data_iter)
 
-                positive_image = data_dict['positive_image'].to(self.gpu)
-                outfit_list = self.list2gpu(data_dict['outfit_list'])
-                negative_list = self.list2gpu(data_dict['negative_list'])
+                self.dict2gpu(data_dict)
+
+                D_p = torch.zeros((self.batch_size, 1))
+                D_n = torch.zeros((self.batch_size, 1))
+
+                for n in range(self.num_outfit):
+                    f_o = self.CSA(data_dict['outfit_image_{}'.format(n)], data_dict['outfit_onehot_{}'.format(n)])
+                    f_p = self.CSA(data_dict['positive_image'], data_dict['outfit_onehot_{}'.format(n)])
+                    D_p += torch.mean((f_o - f_p)**2, dim=1)
+
+                for m in range(self.num_negative):
+                    D_n_m = torch.zeros((self.batch_size, 1))
+                    for n in range(self.num_outfit):
+                        f_o = self.CSA(data_dict['outfit_image_{}'.format(n)], data_dict['outfit_onehot_{}'.format(n)])
+                        f_n = self.CSA(data_dict['negative_image_{}'.format(n)], data_dict['negative_onehot_{}'.format(n)])
+                        D_n_m += torch.mean((f_o - f_n) ** 2, dim=1)
+                    D_n += D_n_m
+
+                D_n = D_n / self.batch_size
+
+                loss = self.ranking_loss(D_p, D_n, (torch.ones_like(D_p) * -1).sign())
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
 
                 loss_dict = dict()
+                loss_dict['ranking_loss'] = loss.item()
 
                 if (i + 1) % self.log_step == 0:
                     et = time.time() - start_time
@@ -149,10 +177,8 @@ class Solver(object):
 
             # Save model checkpoints.
             if (e + 1) % self.save_step == 0 and (e + 1) >= self.save_start:
-                G_path = os.path.join(self.model_dir, '{}-G.ckpt'.format(e + 1))
-                D_path = os.path.join(self.model_dir, '{}-D.ckpt'.format(e + 1))
-                torch.save(self.G.state_dict(), G_path)
-                torch.save(self.D.state_dict(), D_path)
+                G_path = os.path.join(self.model_dir, '{}-CSA.ckpt'.format(e + 1))
+                torch.save(self.CSA.state_dict(), G_path)
                 print('Saved model checkpoints into {}...'.format(self.model_dir))
 
         print('Training is finished')

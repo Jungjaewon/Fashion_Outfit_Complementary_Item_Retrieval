@@ -17,7 +17,7 @@ class ConditionalSimNet(nn.Module):
         # embeddingnet, n_conditions, embedding_size, learnedmask=True, prein=False
         super(ConditionalSimNet, self).__init__()
         self.learnedmask = config['TRAINING_CONFIG']['MASK_LEARN'] == 'True'
-        self.num_conditions = config['TRAINING_CONFIG']['NUM_CONDITION'] # num_masks
+        self.num_conditions = config['TRAINING_CONFIG']['NUM_CONDITIONS'] # num_masks
         self.num_category = config['TRAINING_CONFIG']['NUM_CATE']
         self.embedding_size = config['TRAINING_CONFIG']['EMD_DIM']
         self.pre_mask = config['TRAINING_CONFIG']['PRE_MASK'] == 'True'
@@ -67,30 +67,33 @@ class ConditionalSimNet(nn.Module):
             # no gradients for the masks
             self.masks.weight = torch.nn.Parameter(torch.Tensor(mask_array), requires_grad=False)
 
-    def forward(self, image, image_category, concat_categories):
+    def forward(self, image, concat_categories):
         # image (B,C,H,W)
         # image_category (B, NUM_CATE)
         # concat_categories (B, NUM_CATE * @)
 
         feature_x = self.backbone(image) # Batch, embedding_dims
         feature_x = feature_x.unsqueeze(dim=1) # Batch, 1, embedding_dims
-        b, _, e_dims = feature_x.size()
-        feature_x = feature_x.expand((b, self.num_conditions ,e_dims))  # Batch, num_conditions, embedding_dims
+        b, _, _ = feature_x.size()
+        feature_x = feature_x.expand((b, self.num_conditions, self.embedding_size))  # Batch, num_conditions, embedding_dims
 
         index = Variable(torch.LongTensor(range(self.num_conditions)))
 
         if image.is_cuda:
-            index = index.cuda()
+            index = index.cuda() # num_conditions
+        index = index.unsqueeze(dim=0) # 1, num_conditions
+        index = index.expand((b, self.num_conditions)) # batch_size, num_conditions
 
-        embed = self.masks(index) # num_conditions, embedding_dims
+        embed = self.masks(index) # batch_size, num_conditions, embedding_dims
+        embed_feature = embed * feature_x # batch_size, num_conditions, embedding_dims
 
-        attention_weight = self.cate_net(concat_categories)
-        self.mask = self.masks(image_category)
-        if self.learnedmask:
-            self.mask = torch.nn.functional.relu(self.mask)
+        attention_weight = self.cate_net(concat_categories) # batch_size, num_conditions
+        attention_weight = attention_weight.unsqueeze(dim=2)
+        attention_weight = attention_weight.expand((b, self.num_conditions, self.embedding_size)) # batch_size, num_conditions, embedding_dims
 
-        masked_embedding = feature_x * self.mask
-        norm = torch.norm(masked_embedding, p=2, dim=1) + 1e-10
-        masked_embedding = masked_embedding / norm.expand_as(masked_embedding)
-        return masked_embedding, self.mask.norm(1), feature_x.norm(2), masked_embedding.norm(2)
+        weighted_feature = embed_feature * attention_weight # batch_size, num_conditions, embedding_dims
+
+        final_feature = torch.sum(weighted_feature, dim=1) # batch_size, embedding_dims
+
+        return final_feature
 

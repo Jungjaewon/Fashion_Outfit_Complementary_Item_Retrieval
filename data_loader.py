@@ -1,4 +1,6 @@
 import json
+import torch
+import os.path as osp
 
 from torch.utils import data
 from torchvision import transforms as T
@@ -9,18 +11,34 @@ class DataSet(data.Dataset):
 
     def __init__(self, config, img_transform):
         self.img_transform = img_transform
+        self.num_conditions = config['TRAINING_CONFIG']['NUM_CONDITIONS']
+        self.num_outfit = config['TRAINING_CONFIG']['NUM_OUTFIT']
+        self.num_negative = config['TRAINING_CONFIG']['NUM_NEGATIVE']
+        self.data_dir = config['TRAINING_CONFIG']['DATA_DIR']
+
         with open(config['TRAINING_CONFIG']['DATA_DIR'], 'r') as fp:
-            self.data_arr = json.load(fp) # list [[positive_path, [outfit image path],[negative image path]]
+            self.data_arr = json.load(fp) # list [
+                                          # [positive_path, cate_num],
+                                          # [[each_outfit image path, cate]...],
+                                          # [[negative image path, cate]...]
+                                          # ]
 
     def __getitem__(self, index):
 
-        positive_path, outfit_list, negative_list = self.data_arr[index]
-        positive_image = self.img_transform(Image.open(positive_path))
+        positive, outfit_list, negative_list = self.data_arr[index]
+
+        positive_path, positive_cate = positive
+        positive_image = self.img_transform(Image.open(osp.join(self.data_dir, positive_path)))
+        positive_onehot = torch.zeros((self.num_conditions), dtype=torch.long)
+        positive_onehot[positive_cate] = 1
+
         data_dict = {
-            'positive_image' : positive_image ,
-            'outfit_list' : self.get_list_data(outfit_list),
-            'negative_list' : self.get_list_data(negative_list),
+            'positive_image' : positive_image,
         }
+
+        self.get_list_data(data_dict, outfit_list, positive_onehot, prefix='outfit_{}_{}')
+        self.get_list_data(data_dict, negative_list, positive_onehot, prefix='negative_{}_{}')
+
         return data_dict
 
 
@@ -28,14 +46,16 @@ class DataSet(data.Dataset):
         """Return the number of images."""
         return len(self.data_arr)
 
-    def get_list_data(self, path_list):
+    def get_list_data(self, data_dict, data_list, positive_onehot, prefix='outfit_{}_{}'):
 
-        image_list = list()
-        for image_path in path_list:
-            image = self.img_transform(Image.open(image_path))
-            image_list.append(image)
+        for idx, data in enumerate(data_list):
+            image_path, cate = data
+            image = self.img_transform(Image.open(osp.join(self.data_dir, image_path)))
+            one_hot = torch.zeros((self.num_conditions), dtype=torch.long)
+            one_hot[cate] = 1
+            data_dict[prefix.format('image', idx)] = image
+            data_dict[prefix.format('onehot', idx)] = torch.cat((positive_onehot, one_hot),dim=0)
 
-        return image_list
 
 
 def get_loader(config):
