@@ -22,7 +22,9 @@ Not implmented yet
 ## Architecture
 ![architecture](img/overview.JPG)
 ## Results
-
+```
+Empty for now.
+```
 
 ## Comments
  In this implementation, the code is not tested yet. To train a model, data preprocessing is required from dataset from the links below. If you are interested in the paper and code, please make a pull request.  
