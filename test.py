@@ -20,6 +20,20 @@ class MyDataset(data.Dataset):
     def __len__(self):
         return len(self.data)
 
+def get_negative_changing(positive, negative_list):
+
+        positive_path, positive_cate = positive
+
+        for idx, data in enumerate(negative_list):
+            image_path, cate = data
+            if cate == positive_cate:
+                print('herere')
+                print(data)
+                positive[0] = image_path
+                positive[1] = cate
+                print('positive : ', positive)
+                return
+
 if __name__ == '__main__':
     pass
     """
@@ -135,9 +149,11 @@ if __name__ == '__main__':
     print(torch.mean((a_2 - b_2)**2, dim=1))
     """
 
-    b = torch.ones((4,1))
+    positive = ['a.txt', 1]
+    negative_list = [['1.txt', 4],['b.txt', 2],['c.txt', 1],['d.txt', 7]]
 
-    b = b / 2.0
+    get_negative_changing(positive, negative_list)
 
-    print(b)
+    print('out_side : ', positive)
+
 

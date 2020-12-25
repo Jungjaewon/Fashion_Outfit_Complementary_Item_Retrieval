@@ -30,8 +30,10 @@ def main(config):
     print('{} is started'.format(config['TRAINING_CONFIG']['MODE']))
     if config['TRAINING_CONFIG']['MODE'] == 'train':
         solver.train()
-    elif config['TRAINING_CONFIG']['MODE'] == 'test':
-        solver.test()
+    elif config['TRAINING_CONFIG']['MODE'] == 'testing':
+        solver.testing()
+    elif config['TRAINING_CONFIG']['MODE'] == 'indexing':
+        solver.indexing()
     print('{} is finished'.format(config['TRAINING_CONFIG']['MODE']))
 
 

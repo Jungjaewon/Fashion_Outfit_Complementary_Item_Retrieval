@@ -5,6 +5,9 @@ import torch
 import glob
 import os.path as osp
 import torch.nn as nn
+import numpy as np
+import pickle
+import hnswlib
 
 from model import ConditionalSimNet
 
@@ -21,14 +24,13 @@ class Solver(object):
 
         self.epoch         = config['TRAINING_CONFIG']['EPOCH']
         self.batch_size    = config['TRAINING_CONFIG']['BATCH_SIZE']
-        self.base_lr       = float(config['TRAINING_CONFIG']['BASE_LR'])
-        self.embed_lr      = float(config['TRAINING_CONFIG']['EMBED_LR'])
-        self.mask_lr       = float(config['TRAINING_CONFIG']['MASK_LR'])
+        self.lr       = float(config['TRAINING_CONFIG']['BASE_LR'])
         self.margin        = float(config['TRAINING_CONFIG']['MARGIN'])
         self.lambda_back   = float(config['TRAINING_CONFIG']['LAMBDA_BACK'])
         self.lambda_sub    = float(config['TRAINING_CONFIG']['LAMBDA_SUB'])
         self.num_outfit = config['TRAINING_CONFIG']['NUM_OUTFIT']
         self.num_negative = config['TRAINING_CONFIG']['NUM_NEGATIVE']
+        self.embedding_size = config['TRAINING_CONFIG']['EMD_DIM']
 
         self.optim = config['TRAINING_CONFIG']['OPTIM']
         self.beta1 = config['TRAINING_CONFIG']['BETA1']
@@ -65,7 +67,8 @@ class Solver(object):
 
     def build_model(self):
         self.CSA = ConditionalSimNet(self.config).to(self.gpu)
-        self.optimizer = torch.optim.Adam(self.CSA.parameters(), self.base_lr, (self.beta1, self.beta2))
+        self.optimizer = torch.optim.Adam(self.CSA.parameters(), self.lr, (self.beta1, self.beta2))
+        self.lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=0.95)
         self.print_network(self.CSA, 'CSA')
 
     def print_network(self, model, name):
@@ -121,10 +124,10 @@ class Solver(object):
 
         # Set data loader.
         data_loader = self.data_loader
+        data_iter = iter(data_loader)
         iterations = len(self.data_loader)
         print('iterations : ', iterations)
         # Fetch fixed inputs for debugging.
-        data_iter = iter(data_loader)
 
         start_epoch = self.restore_model()
         start_time = time.time()
@@ -158,11 +161,12 @@ class Solver(object):
 
                 D_n = D_n / self.batch_size
 
-                loss = self.ranking_loss(D_p, D_n, (torch.ones_like(D_p) * -1).sign())
+                loss = self.ranking_loss(D_p, D_n, data_dict['loss_tensor'].sign())
 
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+                self.lr_scheduler.step()
 
                 loss_dict = dict()
                 loss_dict['ranking_loss'] = loss.item()
@@ -183,6 +187,71 @@ class Solver(object):
 
         print('Training is finished')
 
-    def test(self):
-        pass
+    def testing(self):
+        # Set data loader.
+        data_loader = self.data_loader
+        # cpu computation
+
+        with open(osp.join(self.result_dir, 'indexed_dataset.pickle'), 'rb') as fp:
+            indexed_dataset = pickle.load(fp)
+        num_elements = 0
+
+        for key in indexed_dataset:
+            num_elements += len(indexed_dataset[key])
+
+        # Declaring index
+        p = hnswlib.Index(space='l2', dim=self.embedding_size)  # possible options are l2, cosine or ip
+
+        # Initing index - the maximum number of elements should be known beforehand
+        p.init_index(max_elements=num_elements, ef_construction=200, M=16)
+
+        # Element insertion (can be called several times):
+
+        for key in indexed_dataset:
+            data = indexed_dataset[key]
+            data_labels = np.zeros(len(data))
+            data_labels[:] = 1
+            p.add_items(data, data_labels)
+
+        # Controlling the recall by setting ef:
+        p.set_ef(50)  # ef should always be > k
+
+        acc = 0
+        cnt = 0
+        for idx, data_dict in enumerate(data_loader):
+            cnt += self.num_outfit
+            for n in range(self.num_outfit):
+                positive_cate = data_dict['positive_cate'].cpu().detach().item()
+                f_o = self.CSA(data_dict['outfit_image_{}'.format(n)], data_dict['outfit_onehot_{}'.format(n)])
+                f_o = f_o.cpu().numpy()
+                # Query dataset, k - number of closest elements (returns 2 numpy arrays)
+                labels, distances = p.knn_query(f_o, k=1) # would be make error when knn can not find a result.
+                if labels == positive_cate:
+                    acc += 1
+                print('search result, GT : {}, Result {}'.format(positive_cate, labels))
+        print('total acc : {:.4}, cnt : {}'.format(acc / float(cnt), cnt))
+
+    def indexing(self):
+
+        data_loader = self.data_loader
+        index_dict = dict()
+        for idx, data_dict in enumerate(data_loader):
+
+            self.dict2gpu(data_dict)
+
+            for n in range(self.num_outfit):
+                positive_cate = data_dict['positive_cate'].cpu().detach().item()
+                f_o = self.CSA(data_dict['outfit_image_{}'.format(n)], data_dict['outfit_onehot_{}'.format(n)])
+                f_o = f_o.cpu().detach().numpy()
+
+                if positive_cate not in index_dict:
+                    index_dict[positive_cate] = list()
+                index_dict[positive_cate].append(f_o)
+
+        for key in index_dict:
+            index_dict[key] = np.array(index_dict[key])
+
+        with open(osp.join(self.result_dir, 'indexed_dataset.pickle'), 'wb') as fp:
+            pickle.dump(index_dict, fp)
+
 

@@ -5,24 +5,22 @@ MODEL_CONFIG:
 TRAINING_CONFIG:
 
   EPOCH: 100
-  BATCH_SIZE: 4
-  BACKBONE: 'resnet50'
+  BATCH_SIZE: 96
+  BACKBONE: 'resnet18'
 
   # lr and lambda
-  BASE_LR : 10e-5
-  EMBED_LR : 10e-5
-  MASK_LR : 20e-5
+  LR : 10e-5
   LAMBDA_BACK : 1
   LAMBDA_SUB: 30
-  MARGIN : 0.2
+  MARGIN : 0.3
 
   #Other Setting
   PRE_MASK : 'True'
   MASK_LEARN : 'True'
   NUM_CATE : 10
-  NUM_CONDITIONS : 10
-  NUM_OUTFIT : 10
-  NUM_NEGATIVE : 10
+  NUM_CONDITIONS : 5
+  NUM_OUTFIT : 5
+  NUM_NEGATIVE : 5
   EMD_DIM : 64
   NUM_CONCEPT : 4
   IMAGE_NET: 'True'
@@ -40,6 +38,9 @@ TRAINING_CONFIG:
   USE_TENSORBOARD : 'False' # 'True' or 'False'
 
   # Directory
+  TRAIN_JSON : 'train.json'
+  TESTING_JSON : 'testing.json'
+  INDEXING_JSON : 'indexing.json'
   DATA_DIR : 'data/'
   TRAIN_DIR : 'CSA_tutorial'
   LOG_DIR : 'logs'
