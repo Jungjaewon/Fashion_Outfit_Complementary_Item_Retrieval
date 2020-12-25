@@ -25,7 +25,7 @@ Not implmented yet
 
 
 ## Comments
- In this implementation, the code is not tested yet. If you are interested in the paper and code, please make a pull request.  
+ In this implementation, the code is not tested yet. To train a model, data preprocessing is required from dataset from the links below. If you are interested in the paper and code, please make a pull request.  
 ## Reference
 1. Dataset : https://github.com/mvasil/fashion-compatibility and https://github.com/xthan/polyvore
 2. Learning-Similarity-Conditions : https://github.com/rxtan2/Learning-Similarity-Conditions
